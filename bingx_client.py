@@ -1,46 +1,24 @@
-import time
-import hmac
-import hashlib
 import requests
 import pandas as pd
-from config.bingx_config import API_KEY, API_SECRET, BASE_URL
+from config.bingx_config import BASE_URL
 
-class BingX:
-    def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({"X-BX-APIKEY": API_KEY})
+class BingXClient:
 
-    def _sign(self, params):
-        query = "&".join([f"{k}={v}" for k, v in params.items()])
-        return hmac.new(
-            API_SECRET.encode(),
-            query.encode(),
-            hashlib.sha256
-        ).hexdigest()
-
-    def get_all_usdt_pairs(self):
+    def get_futures_pairs(self):
         url = f"{BASE_URL}/openApi/swap/v2/quote/contracts"
-        r = self.session.get(url).json()
-        return [
-            x["symbol"] for x in r["data"]
-            if x["currency"] == "USDT"
-        ]
+        data = requests.get(url).json()
+        return [i["symbol"] for i in data["data"] if i["quoteAsset"] == "USDT"]
 
-    def get_klines(self, symbol, interval="15m", limit=200):
+    def get_klines(self, symbol, interval, limit=200):
+        url = f"{BASE_URL}/openApi/swap/v2/quote/klines"
         params = {
             "symbol": symbol,
             "interval": interval,
-            "limit": limit,
-            "timestamp": int(time.time() * 1000)
+            "limit": limit
         }
-        params["signature"] = self._sign(params)
-        url = f"{BASE_URL}/openApi/swap/v3/quote/klines"
-        r = self.session.get(url, params=params).json()
-
-        df = pd.DataFrame(r["data"], columns=[
+        r = requests.get(url, params=params).json()["data"]
+        df = pd.DataFrame(r, columns=[
             "time","open","high","low","close","volume"
         ])
-        df[["open","high","low","close","volume"]] = df[
-            ["open","high","low","close","volume"]
-        ].astype(float)
+        df = df.astype(float)
         return df
