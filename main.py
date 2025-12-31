@@ -7,7 +7,9 @@ from report import log_signal
 import pytz
 import datetime
 
-
+# ======================
+# INIT
+# ======================
 client = BingXClient()
 pairs = client.get_futures_pairs()
 
@@ -18,8 +20,11 @@ if not pairs:
     exit()
 
 signals_today = 0
-last_signal = {}   # 🔒 ANTI SPAM MEMORY
+last_signal = {}   # 🔒 ANTI SPAM
 
+# ======================
+# LOOP PAIR
+# ======================
 for symbol in pairs:
     df15 = client.get_klines(symbol, "15m")
     df5 = client.get_klines(symbol, "5m")
@@ -31,11 +36,15 @@ for symbol in pairs:
     close15 = df15["close"]
     ema50_15 = EMA(close15, 50)
     ema200_15 = EMA(close15, 200)
+
     rsi_series = RSI(close15)
     rsi_value = rsi_series.iloc[-1]
+
     macd15, macd_signal15, hist15 = MACD(close15)
+
     atr = ATR(df15)
     vol_ma = df15["volume"].rolling(20).mean()
+    volume_valid = df15["volume"].iloc[-1] > vol_ma.iloc[-1]
 
     # ===== DATA 5M =====
     close5 = df5["close"]
@@ -43,59 +52,68 @@ for symbol in pairs:
     ema200_5 = EMA(close5, 200)
     macd5, macd_signal5, hist5 = MACD(close5)
 
+    # ===== FILTER NO TRADE =====
     if no_trade_filter(df15, atr, vol_ma):
         continue
 
+    # ======================
+    # FLAGS
+    # ======================
     side = None
-    score = 0
+    trend_valid = False
+    macd_valid = False
     rsi_valid = False
     mtf_valid = False
-    volume_valid = df15["volume"].iloc[-1] > vol_ma.iloc[-1]
+    score = 0
 
     # ======================
-    # LONG LOGIC
+    # TREND DETECTION (15M)
     # ======================
     if ema50_15.iloc[-1] > ema200_15.iloc[-1] and close15.iloc[-1] > ema50_15.iloc[-1]:
         side = "LONG"
-        score += 30
+        trend_valid = True
 
-        if macd15.iloc[-1] > macd_signal15.iloc[-1] and hist15.iloc[-1] > 0:
-            score += 25
-
-        if 45 <= rsi_value <= 65:
-            score += 20
-            rsi_valid = True
-
-        if volume_valid:
-            score += 15
-
-        if ema50_5.iloc[-1] > ema200_5.iloc[-1] and macd5.iloc[-1] > macd_signal5.iloc[-1]:
-            score += 10
-            mtf_valid = True
-
-    # ======================
-    # SHORT LOGIC
-    # ======================
     elif ema50_15.iloc[-1] < ema200_15.iloc[-1] and close15.iloc[-1] < ema50_15.iloc[-1]:
         side = "SHORT"
-        score += 30
-
-        if macd15.iloc[-1] < macd_signal15.iloc[-1] and hist15.iloc[-1] < 0:
-            score += 25
-
-        if 35 <= rsi_value <= 55:
-            score += 20
-            rsi_valid = True
-
-        if volume_valid:
-            score += 15
-
-        if ema50_5.iloc[-1] < ema200_5.iloc[-1] and macd5.iloc[-1] < macd_signal5.iloc[-1]:
-            score += 10
-            mtf_valid = True
+        trend_valid = True
 
     if not side:
         continue
+
+    # ======================
+    # MACD (15M)
+    # ======================
+    if side == "LONG" and macd15.iloc[-1] > macd_signal15.iloc[-1] and hist15.iloc[-1] > 0:
+        macd_valid = True
+
+    if side == "SHORT" and macd15.iloc[-1] < macd_signal15.iloc[-1] and hist15.iloc[-1] < 0:
+        macd_valid = True
+
+    # ======================
+    # RSI
+    # ======================
+    if side == "LONG" and 45 <= rsi_value <= 65:
+        rsi_valid = True
+
+    if side == "SHORT" and 35 <= rsi_value <= 55:
+        rsi_valid = True
+
+    # RSI Strength
+    if side == "LONG":
+        rsi_strength = "Weak" if rsi_value < 50 else "Ideal" if rsi_value <= 60 else "Late"
+    else:
+        rsi_strength = "Late" if rsi_value > 50 else "Ideal" if rsi_value >= 40 else "Weak"
+
+    # ======================
+    # MTF CONFIRMATION (5M)
+    # ======================
+    if side == "LONG":
+        if ema50_5.iloc[-1] > ema200_5.iloc[-1] and macd5.iloc[-1] > macd_signal5.iloc[-1]:
+            mtf_valid = True
+
+    if side == "SHORT":
+        if ema50_5.iloc[-1] < ema200_5.iloc[-1] and macd5.iloc[-1] < macd_signal5.iloc[-1]:
+            mtf_valid = True
 
     # ======================
     # 🔒 ANTI SPAM
@@ -106,53 +124,66 @@ for symbol in pairs:
     last_signal[symbol] = side
 
     # ======================
-    # RSI STRENGTH
+    # CONFIDENCE SCORING (REALISTIC)
     # ======================
-    if side == "LONG":
-        if rsi_value < 50:
-            rsi_strength = "Weak"
-        elif rsi_value <= 60:
-            rsi_strength = "Ideal"
-        else:
-            rsi_strength = "Late"
+    if trend_valid:
+        score += 25
+
+    if macd_valid:
+        score += 20
+
+    if rsi_valid:
+        score += 15
+
+    if volume_valid:
+        score += 10
     else:
-        if rsi_value > 50:
-            rsi_strength = "Late"
-        elif rsi_value >= 40:
-            rsi_strength = "Ideal"
-        else:
-            rsi_strength = "Weak"
+        score -= 5
+
+    if mtf_valid:
+        score += 10
+    else:
+        score -= 10
+
+    display_score = max(0, min(score, 100))
+
+    if display_score >= 80:
+        conf_label = "HIGH CONFIDENCE 🚀"
+    elif display_score >= 60:
+        conf_label = "MEDIUM CONFIDENCE"
+    else:
+        conf_label = "LOW CONFIDENCE ⚠️"
 
     # ======================
-    # CONFIDENCE
+    # ENTRY & RISK
     # ======================
-    display_score = min(score, 90)
-    conf_label = (
-        "HIGH CONFIDENCE 🚀" if display_score >= 80 else
-        "MEDIUM" if display_score >= 60 else
-        "LOW CONFIDENCE ⚠️"
-    )
-
     entry = close15.iloc[-1]
     sl, tps = calculate_levels(entry, atr, side)
 
     tz = pytz.timezone("Asia/Jakarta")
     now = datetime.datetime.now(tz).strftime("%H:%M")
 
+    # ======================
+    # REASON
+    # ======================
     reason = (
-        f"EMA50 {'>' if side=='LONG' else '<'} EMA200 (trend), "
-        f"MACD searah, RSI {rsi_strength.lower()}, "
+        f"EMA trend {'bullish' if side=='LONG' else 'bearish'}, "
+        f"MACD {'searah' if macd_valid else 'lemah'}, "
+        f"RSI {rsi_strength.lower()}, "
         f"volume {'mendukung' if volume_valid else 'lemah'}, "
         f"MTF {'searah' if mtf_valid else 'belum searah'}"
     )
 
+    # ======================
+    # MESSAGE
+    # ======================
     msg = f"""
 {'📈' if side == 'LONG' else '📉'} {side} SIGNAL
 🕒 Time: {now} WIB
 🪙 {symbol}
 
 📉 Trend EMA: {'🟢 EMA50 > EMA200' if side=='LONG' else '🔴 EMA50 < EMA200'}
-📊 MACD: ✅
+📊 MACD: {'✅' if macd_valid else '❌'}
 RSI: {rsi_value:.1f} {'✅' if rsi_valid else '❌'} ({rsi_strength})
 📦 Volume: {'✅' if volume_valid else '❌'}
 🧭 MTF (5M): {'✅' if mtf_valid else '❌'}
@@ -174,5 +205,8 @@ Reason: {reason}
     log_signal(symbol, side, display_score)
     signals_today += 1
 
+# ======================
+# NO SIGNAL INFO
+# ======================
 if signals_today == 0:
     send_telegram("🤖 Bot aktif – belum ada moment entry")
