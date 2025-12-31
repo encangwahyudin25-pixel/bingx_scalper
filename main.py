@@ -30,7 +30,9 @@ for symbol in pairs:
 
     ema50 = EMA(close, 50)
     ema200 = EMA(close, 200)
-    rsi = RSI(close)
+    rsi_series = RSI(close)
+    rsi_value = rsi_series.iloc[-1]
+
     macd, macd_signal, hist = MACD(close)
     atr = ATR(df15)
     vol_ma = df15["volume"].rolling(20).mean()
@@ -40,29 +42,44 @@ for symbol in pairs:
 
     side = None
     score = 0
+    rsi_valid = False
 
-    # ===== LONG =====
+    # ======================
+    # LONG LOGIC
+    # ======================
     if ema50.iloc[-1] > ema200.iloc[-1] and close.iloc[-1] > ema50.iloc[-1]:
         side = "LONG"
-        score += 30
+        score += 30  # Trend EMA
+
         if macd.iloc[-1] > macd_signal.iloc[-1] and hist.iloc[-1] > 0:
             score += 25
-        if 45 <= rsi.iloc[-1] <= 65:
+
+        if 45 <= rsi_value <= 65:
             score += 20
+            rsi_valid = True
+
         if df15["volume"].iloc[-1] > vol_ma.iloc[-1]:
             score += 15
+
         score += 10  # MTF confirmation
 
-    # ===== SHORT =====
+    # ======================
+    # SHORT LOGIC
+    # ======================
     elif ema50.iloc[-1] < ema200.iloc[-1] and close.iloc[-1] < ema50.iloc[-1]:
         side = "SHORT"
-        score += 30
+        score += 30  # Trend EMA
+
         if macd.iloc[-1] < macd_signal.iloc[-1] and hist.iloc[-1] < 0:
             score += 25
-        if 35 <= rsi.iloc[-1] <= 55:
+
+        if 35 <= rsi_value <= 55:
             score += 20
+            rsi_valid = True
+
         if df15["volume"].iloc[-1] > vol_ma.iloc[-1]:
             score += 15
+
         score += 10  # MTF confirmation
 
     if not side:
@@ -87,7 +104,7 @@ for symbol in pairs:
 
 📉 Trend EMA: {'🟢' if side == 'LONG' else '🔴'}
 📊 MACD: ✅
-RSI: {rsi.iloc[-1]:.1f} ✅
+RSI: {rsi_value:.1f} {'✅' if rsi_valid else '❌'}
 🧭 MTF (5M): ✅
 
 🔥 Confidence: {score}%
