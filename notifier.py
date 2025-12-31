@@ -8,3 +8,6 @@ def send_signal(text):
         "text": text,
         "parse_mode": "Markdown"
     })
+
+def heartbeat():
+    send_signal("🤖 Bot AKTIF\nBelum ada moment entry saat ini.")
