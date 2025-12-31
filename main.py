@@ -1,23 +1,24 @@
 from bingx_client import BingX
-from strategy import apply_indicators, long_signal, short_signal, signal_details
+from strategy import apply_indicators, long_signal, short_signal, confidence_score
 from filters import no_trade
 from risk import risk_levels
-from notifier import send_signal
-from datetime import datetime, timedelta
+from notifier import send_signal, heartbeat
+from datetime import datetime
+import pytz
 
 client = BingX()
 pairs = client.get_all_usdt_pairs()
-signal_sent = False
+signal_found = False
 
-wib_time = datetime.utcnow() + timedelta(hours=7)
-time_str = wib_time.strftime("%H:%M WIB")
+tz = pytz.timezone("Asia/Jakarta")
+now = datetime.now(tz).strftime("%H:%M WIB")
 
 for pair in pairs:
     try:
         df = client.get_klines(pair)
         df = apply_indicators(df)
 
-        block, reason = no_trade(df)
+        block, _ = no_trade(df)
         if block:
             continue
 
@@ -25,57 +26,45 @@ for pair in pairs:
         atr = df.atr.iloc[-1]
 
         if long_signal(df):
-            detail = signal_details(df, "LONG")
-            sl, tp1, tp2, tp3, tp4 = risk_levels(price, atr, "LONG")
+            signal_found = True
+            conf = confidence_score(df, "LONG")
+            sl, tps = risk_levels(price, atr, "LONG")
 
             send_signal(
-                f"🟢 *LONG SIGNAL*\n"
-                f"🕒 Time: {time_str}\n"
-                f"KOIN : {pair}\n\n"
-                f"📉 Trend EMA: {detail['ema_icon']}\n"
-                f"📊 MACD: {detail['macd_icon']}\n"
-                f"RSI: {round(df.rsi.iloc[-1],2)} {detail['rsi_icon']}\n"
-                f"🔥 Confidence: {detail['confidence']}%\n\n"
-                f"Entry: {round(price,4)}\n"
-                f"SL: {round(sl,4)}\n"
-                f"TP1: {round(tp1,4)}\n"
-                f"TP2: {round(tp2,4)}\n"
-                f"TP3: {round(tp3,4)}\n"
-                f"TP4: {round(tp4,4)}\n\n"
+                f"*📈 LONG SIGNAL*\n"
+                f"🕒 Time: {now}\n"
+                f"KOIN: {pair}\n\n"
+                f"📉 Trend EMA: 🟢\n"
+                f"📊 MACD: ✅\n"
+                f"RSI: {round(df.rsi.iloc[-1],1)} ✅\n"
+                f"🔥 Confidence: {conf}%\n\n"
+                f"Entry: {price}\n"
+                f"SL: {sl}\n"
+                f"TP1: {tps[0]}\nTP2: {tps[1]}\nTP3: {tps[2]}\nTP4: {tps[3]}\n\n"
                 f"Reason: Trend kuat + momentum valid"
             )
-            signal_sent = True
 
-        elif short_signal(df):
-            detail = signal_details(df, "SHORT")
-            sl, tp1, tp2, tp3, tp4 = risk_levels(price, atr, "SHORT")
+        if short_signal(df):
+            signal_found = True
+            conf = confidence_score(df, "SHORT")
+            sl, tps = risk_levels(price, atr, "SHORT")
 
             send_signal(
-                f"🔴 *SHORT SIGNAL*\n"
-                f"🕒 Time: {time_str}\n"
-                f"KOIN : {pair}\n\n"
-                f"📉 Trend EMA: {detail['ema_icon']}\n"
-                f"📊 MACD: {detail['macd_icon']}\n"
-                f"RSI: {round(df.rsi.iloc[-1],2)} {detail['rsi_icon']}\n"
-                f"🔥 Confidence: {detail['confidence']}%\n\n"
-                f"Entry: {round(price,4)}\n"
-                f"SL: {round(sl,4)}\n"
-                f"TP1: {round(tp1,4)}\n"
-                f"TP2: {round(tp2,4)}\n"
-                f"TP3: {round(tp3,4)}\n"
-                f"TP4: {round(tp4,4)}\n\n"
-                f"Reason: Trend kuat + momentum valid"
+                f"*📉 SHORT SIGNAL*\n"
+                f"🕒 Time: {now}\n"
+                f"KOIN: {pair}\n\n"
+                f"📉 Trend EMA: 🔴\n"
+                f"📊 MACD: ❌\n"
+                f"RSI: {round(df.rsi.iloc[-1],1)} ❌\n"
+                f"🔥 Confidence: {conf}%\n\n"
+                f"Entry: {price}\n"
+                f"SL: {sl}\n"
+                f"TP1: {tps[0]}\nTP2: {tps[1]}\nTP3: {tps[2]}\nTP4: {tps[3]}\n\n"
+                f"Reason: Trend turun + momentum valid"
             )
-            signal_sent = True
 
     except Exception as e:
         print(pair, e)
 
-# Jika tidak ada signal → bot tetap kirim status
-if not signal_sent:
-    send_signal(
-        f"⏳ *NO SIGNAL*\n"
-        f"🕒 Time: {time_str}\n"
-        f"Status: Bot aktif & scanning market\n"
-        f"Alasan: Belum ada setup valid sesuai rule"
-    )
+if not signal_found:
+    heartbeat()
