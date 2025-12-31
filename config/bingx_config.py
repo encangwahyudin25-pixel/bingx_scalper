@@ -1,3 +1,5 @@
-API_KEY = "ISI_API_KEY_ANDA"
-API_SECRET = "ISI_API_SECRET_ANDA"
+import os
+
+API_KEY = os.getenv("BINGX_API_KEY")
+API_SECRET = os.getenv("BINGX_API_SECRET")
 BASE_URL = "https://open-api.bingx.com"
