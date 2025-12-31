@@ -1,4 +1,5 @@
 requests
 pandas
-ta
+numpy
+python-dotenv
 pytz
