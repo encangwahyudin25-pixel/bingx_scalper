@@ -1,13 +1,11 @@
 import requests
-from config.telegram_config import BOT_TOKEN, CHAT_ID
+from config.telegram_config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
-def send_signal(text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={
-        "chat_id": CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown"
-    })
-
-def heartbeat():
-    send_signal("🤖 Bot AKTIF\nBelum ada moment entry saat ini.")
+def send_telegram(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+    requests.post(url, data=payload)
