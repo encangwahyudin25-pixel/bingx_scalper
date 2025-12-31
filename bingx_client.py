@@ -4,28 +4,36 @@ from config.bingx_config import BASE_URL
 
 
 class BingXClient:
+    """
+    BingX Futures Client (USDT-M)
+    SAFE version (anti IP block & schema change)
+    """
 
     def get_futures_pairs(self):
         """
-        Fetch ALL USDT-M Futures pairs safely
+        Fetch pair via TICKER endpoint (paling stabil)
         """
-        url = f"{BASE_URL}/openApi/swap/v2/quote/contracts"
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
+        url = f"{BASE_URL}/openApi/swap/v2/quote/ticker"
 
-        data = resp.json()
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code != 200:
+                return []
 
-        pairs = []
+            data = r.json()
+            if "data" not in data or not isinstance(data["data"], list):
+                return []
 
-        for item in data.get("data", []):
-            symbol = item.get("symbol", "")
-            status = item.get("status", "")
+            pairs = set()
+            for item in data["data"]:
+                symbol = item.get("symbol")
+                if symbol and symbol.endswith("-USDT"):
+                    pairs.add(symbol)
 
-            # ✅ FILTER AMAN & STABIL
-            if symbol.endswith("-USDT") and status == "TRADING":
-                pairs.append(symbol)
+            return sorted(list(pairs))
 
-        return pairs
+        except Exception:
+            return []
 
     def get_klines(self, symbol, interval, limit=200):
         url = f"{BASE_URL}/openApi/swap/v2/quote/klines"
@@ -35,20 +43,25 @@ class BingXClient:
             "limit": limit
         }
 
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        raw = resp.json().get("data", [])
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            if r.status_code != 200:
+                return None
 
-        if not raw or len(raw) < 50:
+            raw = r.json().get("data", [])
+            if not raw or len(raw) < 50:
+                return None
+
+            df = pd.DataFrame(
+                raw,
+                columns=["time", "open", "high", "low", "close", "volume"]
+            )
+
+            df[["open", "high", "low", "close", "volume"]] = df[
+                ["open", "high", "low", "close", "volume"]
+            ].astype(float)
+
+            return df
+
+        except Exception:
             return None
-
-        df = pd.DataFrame(
-            raw,
-            columns=["time", "open", "high", "low", "close", "volume"]
-        )
-
-        df[["open", "high", "low", "close", "volume"]] = df[
-            ["open", "high", "low", "close", "volume"]
-        ].astype(float)
-
-        return df
