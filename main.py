@@ -11,18 +11,18 @@ import datetime
 client = BingXClient()
 pairs = client.get_futures_pairs()
 
+send_telegram(f"🔍 Futures pair terdeteksi: {len(pairs)}")
+
 if not pairs:
-    send_telegram("❌ Gagal fetch pair futures BingX")
+    send_telegram("❌ Gagal fetch pair futures BingX (API kosong / diblokir)")
     exit()
 
 signals_today = 0
 
 for symbol in pairs:
-
     df15 = client.get_klines(symbol, "15m")
     df5 = client.get_klines(symbol, "5m")
 
-    # ✅ SAFETY CHECK
     if df15 is None or df5 is None:
         continue
 
@@ -41,8 +41,8 @@ for symbol in pairs:
     side = None
     score = 0
 
-    # ===== TREND LOGIC =====
-    if ema50.iloc[-1] > ema200.iloc[-1]:
+    # ===== LONG =====
+    if ema50.iloc[-1] > ema200.iloc[-1] and close.iloc[-1] > ema50.iloc[-1]:
         side = "LONG"
         score += 30
         if macd.iloc[-1] > macd_signal.iloc[-1] and hist.iloc[-1] > 0:
@@ -51,8 +51,10 @@ for symbol in pairs:
             score += 20
         if df15["volume"].iloc[-1] > vol_ma.iloc[-1]:
             score += 15
+        score += 10  # MTF confirmation
 
-    elif ema50.iloc[-1] < ema200.iloc[-1]:
+    # ===== SHORT =====
+    elif ema50.iloc[-1] < ema200.iloc[-1] and close.iloc[-1] < ema50.iloc[-1]:
         side = "SHORT"
         score += 30
         if macd.iloc[-1] < macd_signal.iloc[-1] and hist.iloc[-1] < 0:
@@ -61,6 +63,7 @@ for symbol in pairs:
             score += 20
         if df15["volume"].iloc[-1] > vol_ma.iloc[-1]:
             score += 15
+        score += 10  # MTF confirmation
 
     if not side:
         continue
@@ -71,14 +74,14 @@ for symbol in pairs:
     tz = pytz.timezone("Asia/Jakarta")
     now = datetime.datetime.now(tz).strftime("%H:%M")
 
-    confidence_label = (
+    conf_label = (
         "HIGH CONFIDENCE 🚀" if score >= 80 else
         "MEDIUM" if score >= 60 else
         "LOW CONFIDENCE ⚠️"
     )
 
     msg = f"""
-📈 {side} SIGNAL
+{'📈' if side == 'LONG' else '📉'} {side} SIGNAL
 🕒 Time: {now} WIB
 🪙 {symbol}
 
@@ -88,7 +91,7 @@ RSI: {rsi.iloc[-1]:.1f} ✅
 🧭 MTF (5M): ✅
 
 🔥 Confidence: {score}%
-({confidence_label})
+({conf_label})
 
 Entry: {entry:.4f}
 SL: {sl:.4f}
@@ -97,13 +100,12 @@ TP2: {tps[1]:.4f}
 TP3: {tps[2]:.4f}
 TP4: {tps[3]:.4f}
 
-Reason: Trend searah, momentum valid, volume mendukung
+Reason: Trend kuat, momentum valid, volume mendukung
 """
 
     send_telegram(msg)
     log_signal(symbol, side, score)
     signals_today += 1
-
 
 if signals_today == 0:
     send_telegram("🤖 Bot aktif – belum ada moment entry")
