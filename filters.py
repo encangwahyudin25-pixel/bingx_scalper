@@ -1,7 +1,6 @@
-def no_trade(df):
-    last = df.iloc[-1]
-    if last.atr < df.atr.mean() * 0.7:
-        return True, "ATR rendah (sideways)"
-    if last.volume < last.vol_ma:
-        return True, "Volume lemah"
-    return False, ""
+def no_trade_filter(df, atr, volume_ma):
+    if atr.iloc[-1] < df['close'].iloc[-1] * 0.001:
+        return True
+    if df['volume'].iloc[-1] < volume_ma.iloc[-1]:
+        return True
+    return False
